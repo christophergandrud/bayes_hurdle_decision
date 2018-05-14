@@ -23,7 +23,7 @@ theme_set(theme_bw())
 
 Imagine that you plan to run an experiment of a new feature on an e-commerce site. You think the new feature will have a positive effect on your revenue, but don't know for sure (otherwise you wouldn't need to do the experiment).
 
-You set up your experment using standard procedures for determining its runtime.[^runtime_simple] However, in the case that during the course of the experiment, it looks like you are losing money because the treatment seems to be perfoming worse than the control:
+You set up your experiment using standard procedures for determining its run-time.[^runtime_simple] However, in the case that during the course of the experiment, it looks like you are losing money because the treatment seems to be performing worse than the control:
 
 - **how much money** would be too much to lose because of the experiment and
 
@@ -33,15 +33,17 @@ At first glance, this seems like a straightforward problem. First, because your 
 
 Seems easy enough.
 
-However, how do you know you actually lost that amount of money due to the new feature? How do you know that the revenue difference wasn't also generated because of **sampling error**? For example, imagine we have control and treatment groups with the following distributions for 10,000 observations each. Note, I simulated these using the same distribution,[^hurdle_dist_basic] i.e. there is actually no difference between the control and treatment groups.
+However, how do you know you actually lost that amount of money due to the new feature? How do you know that the revenue difference wasn't also generated because of **sampling error**? 
+
+For example, imagine we have control and treatment groups with the following distributions for 10,000 observations each. Note, I simulated these using the same distribution,[^hurdle_dist_basic] i.e. there is actually no difference between the control and treatment groups.
 
 ```{r simfun, include=FALSE}
 # Function to generate log-normal hurdle simulations
 
-#' @param n integer number of simulations
-#' @param bernoulli_prob numeric probability of jumping hurdle
-#' @param lnorm_mean numeric mean of the log-normal distribution
-#' @param lnorm_sd numeric standard deviation of the log-normal distribution
+#' @param n integer number, number pf simulations
+#' @param bernoulli_prob numeric, probability of jumping hurdle
+#' @param lnorm_mean numeric, mean of the log-normal distribution
+#' @param lnorm_sd numeric, standard deviation of the log-normal distribution
 sim_lognormal_hurdle <- function(n, bernoulli_prob = 0.2,
                                  lnorm_mean = 3, lnorm_sd = 1) {
     # Simulate whether or not hurdle is jumped from bernoulli
@@ -80,11 +82,11 @@ diff_ab_same <- sum(aa_observed_df$revenue[1:(nrow_df/2)]) -
 
 ```
 
-The difference in revenue between the control and treatment variants is `r round(diff_ab_same)`. This difference exists despite the two groups being from exactly the same distribution. There is no difference between the treatment effect and the control effect! In other words, this difference is not caused by the experiment. The experiment cost/gained us no revenue
+The difference in revenue between the control and treatment groups is `r round(diff_ab_same)`. This difference exists despite the two groups being from exactly the same distribution. There is in fact no difference between the treatment effect and the control effect! In other words, this difference is not caused by the experiment and is cause purely by sampling error. The experiment cost/gained us no revenue over not running the experiment.
 
 # Solution
 
-One solution to this problem is to take sampling error into consideration by directly **estimating how uncertain** we are about how much the experiment is costing us and compare this to how certain we want to be that the experiment is costing us a certain amount.
+One solution to this problem is to take sampling error into consideration by directly **estimating how uncertain** we are about how much the experiment is costing us. Then we compare our estimate to how certain we want to be that the experiment is costing us a certain amount or more.
 
 These are the three broad steps:
 
@@ -106,7 +108,7 @@ We can use Bayesian methods to estimate the true cost of the experiment.[^doing_
 
 3. If they decide to purchase, they decide how much to purchase.
 
-This data generating process suggests that the revenue data we observe from our experiments are from a **hurdle model**.[^hurdle_description] Data from a hurdle model are created by two parts. The first is a Bernoulli probability of whether or not a customer makes a purchase. The second part is some other distribution describing how much they purchase. If "how much they purchase" means number of items, then a useful distribution would be the poisson distribution for count data. In our case, we care about the Euro value of their purchase, so something like the log-normal or gamma distribution is appropriate.
+This data generating process suggests that the revenue data we observe from our experiments are from a **hurdle model**.[^hurdle_description] Data from a hurdle model are created by two parts. The first is a Bernoulli probability of whether or not a customer makes a purchase. The second part is some other distribution describing how much they purchase. If "how much they purchase" means number of items, then a useful distribution would be the Poisson distribution for count data. In our case, we care about the Euro value of their purchase, so something like the log-normal or gamma distribution is appropriate.
 
 The log-normal distribution is relatively easy to understand. It is simply logarithm of the normal distribution and expresses highly right skewed data, which sales per customer tend to be.
 
@@ -250,14 +252,14 @@ Almost the entire HDI is above the accepted cost cut-off, so we would decide to 
 
 [^runtime_simple]: E.g. using a sample size that gives you a power level of 80% and significance level of 5% for your anticipated treatment effect size.
 
-[^hurdle_dist_basic]: Each simulated value $n$ is drawn from the following bernoulli-log normal hurdle probability function:
+[^hurdle_dist_basic]: Each simulated value $n$ is drawn from the following Bernoulli-log normal hurdle probability function:
 $y \sim \begin{cases} 0 & \mathrm{with\: probability}\: 0.4 \\ \ln(\mathcal{N}(20, 2.7))  & \mathrm{if}\: y > 0  \end{cases}$
 
 [^doing_bayes]: For a discussion of why traditional confidence intervals are problematic for this problem see: <http://doingbayesiandataanalysis.blogspot.de/2013/11/optional-stopping-in-data-collection-p.html>
 
 [^hurdle_description]: For a clear explanation of hurdle models see: <https://stats.stackexchange.com/a/81854>
 
-[^mcmc]: I am using Markov Chain Monte Carlo (MCMC) via the Stan probablistic programming language (<http://mc-stan.org/>).
+[^mcmc]: I am using Markov Chain Monte Carlo (MCMC) via the Stan probabilistic programming language (<http://mc-stan.org/>).
 
 [^aa_parameters]: `b_intercept` is the log-normal mean for the control group which we had set at 3, i.e. $\exp(3) \approx 20$. `varianttreatment` is how much the treatment group's mean is different from the control group in this case they are the same, so the true value is 0. `sigma` is the standard deviation of the log-normal part, which we set to 1. `hu` is the probability of not clearing the hurdle, which we had set at 0.4.
 
