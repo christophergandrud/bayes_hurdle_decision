@@ -29,7 +29,7 @@ You set up your experment using standard procedures for determining its runtime.
 
 - how would you know when you have lost that amount of money?
 
-At first glance this seems like an straightforward problem. First, your boss owns the company's utility function. Ask them how much money they are willing to lose to find out the new feature's performance. Second, start the experiment and monitor the difference in revenue between the control and treatment groups. If this difference (for the same number of observations) becomes equal to or bigger than the number your boss gave you, stop the experiment.
+At first glance, this seems like an straightforward problem. First, because your boss owns the company's "utility function", ask them how much money they are willing to lose to find out the new feature's performance. Second, start the experiment and monitor the difference in revenue between the control and treatment groups. If this difference (for the same number of observations in each group) becomes equal to or bigger than the number your boss gave you, stop the experiment.
 
 Seems easy enough.
 
