@@ -187,9 +187,9 @@ There is very little overlap. We can be confident that we have not exceeded our 
 
 # A/B Test Example
 
-Finally, let's see what this would look like if the treatment actually does produce lower revenue than the control. In this case, we simulate
+Finally, let's see what this would look like if the treatment actually does produce lower revenue than the control. In this case, we simulate a control group of "observed data" from the distribution described at the beginning of this piece. The treatment group is from a a slightly different distribution: the log-mean of the log-normal part is set to 2.8 ($\exp(2.8) \approx 16.4$). Once we have this "observed" data, we then follow the decision-making steps and end up with the following posterior distribution of costs of running the experiment for 10,000 customers in each group:
 
-```{r absims, echo=FALSE, message=FALSE}
+```{r absims, echo=FALSE, message=FALSE, cache=TRUE}
 # Create observed data from different distributions
 ab_control <- data.frame(variant = "control",
                          revenue = sim_lognormal_hurdle(n = 10000,
@@ -197,7 +197,7 @@ ab_control <- data.frame(variant = "control",
 
 ab_treatment <- data.frame(variant = "treatment",
                          revenue = sim_lognormal_hurdle(n = 10000,
-                                                        lnorm_mean = 2.7,
+                                                        lnorm_mean = 2.8,
                                                         bernoulli_prob = 0.6))
 ab_observed_df <- rbind(ab_control, ab_treatment)
 
@@ -239,7 +239,7 @@ ggplot(costs_hdi_ab, aes(costs)) +
     xlab("\nControl - Treatment") + ylab("Number of simulations\n")
 ```
 
-
+Almost the entire HDI is above the accepted cost cut-off, so we would decide to stop the experiment.
 
 
 
