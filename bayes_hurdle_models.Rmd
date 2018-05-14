@@ -1,6 +1,7 @@
 ---
-title: 'Experiment Cutoffs: Decision-making and Bayesian Hurdle Models'
+title: 'Should We Stop the Experiment?: Decision-making and Bayesian Hurdle Models'
 author: 'Christopher Gandrud'
+date: '2018-05-13'
 output:
     tufte::tufte_html: default
 ---
@@ -10,11 +11,13 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Load required packages
 library(pacman)
-p_load(dplyr, purrr, ggplot2, brms)
+p_load(dplyr, purrr, ggplot2, brms, HDInterval)
 
 # Set ggplot2 theme
 theme_set(theme_bw())
 ```
+
+> Note: the full source for this paper is available at: <https://github.com/christophergandrud/bayes_hurdle_decision>.
 
 # Problem
 
@@ -39,8 +42,7 @@ However, how do you know you actually lost that amount of money due to the new f
 #' @param bernoulli_prob numeric probability of jumping hurdle
 #' @param lnorm_mean numeric mean of the log-normal distribution
 #' @param lnorm_sd numeric standard deviation of the log-normal distribution
-sim_lognormal_hurdle <- function(n = 1000,
-                                 bernoulli_prob = 0.2,
+sim_lognormal_hurdle <- function(n, bernoulli_prob = 0.2,
                                  lnorm_mean = 3, lnorm_sd = 1) {
     # Simulate whether or not hurdle is jumped from bernoulli
     hurdle_part <- rbernoulli(n = n, p = bernoulli_prob)
@@ -56,25 +58,25 @@ sim_lognormal_hurdle <- function(n = 1000,
 }
 ```
 
-```{r echo=FALSE, message=FALSE, cache=TRUE, fig.cap="Observed distribution of results from an a/b test that is actually an a/a test"}
+```{r aasim, echo=FALSE, message=FALSE, cache=TRUE, fig.cap="Observed distribution of results from an a/b test that is actually an a/a test"}
 # Example simulations when from the same distribution
-ab_same_dist_df <- data.frame()
+aa_observed_df <- data.frame()
 for (i in c("control", "treatment")) {
     temp_df <- data.frame(variant = i,
                           revenue = sim_lognormal_hurdle(n = 10000,
                                                          bernoulli_prob = 0.6))
-    ab_same_dist_df <- rbind(ab_same_dist_df, temp_df)
+    aa_observed_df <- rbind(aa_observed_df, temp_df)
 }
 
-ggplot(ab_same_dist_df, aes(revenue, group = variant)) +
+ggplot(aa_observed_df, aes(revenue, group = variant)) +
     facet_wrap(~variant) +
     geom_histogram(binwidth = 10) +
     ylab("Number of users\n") + xlab("\nRevenue per user")
 
 # Find difference in revenue between a and b
-nrow_df <- nrow(ab_same_dist_df)
-diff_ab_same <- sum(ab_same_dist_df$revenue[1:(nrow_df/2)]) -
-    sum(ab_same_dist_df$revenue[((nrow_df/2) + 1):nrow_df])
+nrow_df <- nrow(aa_observed_df)
+diff_ab_same <- sum(aa_observed_df$revenue[1:(nrow_df/2)]) -
+    sum(aa_observed_df$revenue[((nrow_df/2) + 1):nrow_df])
 
 ```
 
@@ -108,7 +110,7 @@ This data generating process suggests that the revenue data we observe from our 
 
 The log-normal distribution is relatively easy to understand. It is simply logarithm of the normal distribution and expresses highly right skewed data, which sales per customer tend to be.
 
-# Details with an example
+# A/A test example
 
 Let's use this decision-making process with the data we saw above: where the control and treatment have the same effect on revenue.
 
@@ -117,11 +119,11 @@ First, let's set a range of unacceptable losses from the experiment: if the trea
 Second, we take our observed data and use it to simulate many different scenarios of the specific data generating processes the data are from.[^mcmc] The Bayesian jargon for this is the posterior distribution. If you are interested, the posterior parameter distributions (the posterior distributions of the parameters forming the hurdle distribution, such as the log-normal mean `b_intercept`) are shown in the margin figure. These guesses are very close to the parameters we used to generate the fake test data.[^aa_parameters]
 
 ```{r, include=FALSE, cache=TRUE, message=FALSE}
-m1 <- brms::brm(revenue ~ variant, data = ab_same_dist_df,
+m1 <- brms::brm(revenue ~ variant, data = aa_observed_df,
           family = hurdle_lognormal(), cores = 4)
 ```
 
-```{r, echo=FALSE, fig.margin=TRUE, fig.cap="Posterior parameters from a/b test that is actually an a/a test"}
+```{r aaposterior, echo=FALSE, fig.margin=TRUE, fig.cap="Posterior parameters from a/b test that is actually an a/a test"}
 plot(m1)
 ```
 
@@ -131,15 +133,15 @@ Now that we have many draws from the parameters' posterior distributions, we can
 
 2. For each simulation, sum up the revenue for each group and find the difference.
 
-3. Plot the 95% highest posterior density interval (HDI) of the distribution of simulations.
+3. Plot the 95% highest posterior density interval (HDI)[^hdi_define] of the distribution of simulations.
 
 4. See if it overlaps with our stopping criteria interval. If it does, stop the test.
 
-Let's go through these steps in detail.
+See the source code for details of how this is done.[^source]
 
-Most of the work is in the first step. We need to
+Imagine in our analysis, we predetermine that a loss from the experiment of more than 5,000 Euros is unacceptable and so we should stop the experiment. Then we make 4,000 simulations from the posterior for 10,000 hypothetical customers. We find how much more the control groups in these simulations made than the treatment group and drop those outside of the 95% HDI. Finally, we compare the overlap of the HDI with our prespecified cost interval:
 
-```{r, include=FALSE, cache=TRUE}
+```{r aapredictedcosts, include=FALSE, cache=TRUE}
 # Extract posterior distribution
 m1_posterior <- posterior_samples(m1)
 
@@ -165,9 +167,81 @@ pt_sims <- pmap(post_treatment_list, sim_lognormal_hurdle)
 pt_sims_sums <- pmap(pt_sims, sum) %>% unlist
 ```
 
-```{r}
-hist(pc_sims_sums - pt_sims_sums)
+```{r aahdi, echo=FALSE, message=FALSE}
+# Find highest posterior density interval of the predicted experiment costs
+predicted_costs <- pc_sims_sums - pt_sims_sums
+hdi_costs <- hdi(predicted_costs)
+
+# Keep sims in HDI
+costs_hdi <- predicted_costs[predicted_costs >= hdi_costs[1]]
+costs_hdi <- costs_hdi[costs_hdi <= hdi_costs[2]]
+costs_hdi <- data.frame(costs = costs_hdi)
+
+ggplot(costs_hdi, aes(costs)) +
+    geom_histogram() +
+    geom_vline(xintercept = 5000, colour = "red") +
+    xlab("\nControl - Treatment") + ylab("Number of simulations\n")
 ```
+
+There is very little overlap. We can be confident that we have not exceeded our experiment cutoff limit and continue the experiment.
+
+# A/B Test Example
+
+Finally, let's see what this would look like if the treatment actually does produce lower revenue than the control. In this case, we simulate
+
+```{r absims, echo=FALSE, message=FALSE}
+# Create observed data from different distributions
+ab_control <- data.frame(variant = "control",
+                         revenue = sim_lognormal_hurdle(n = 10000,
+                                                        bernoulli_prob = 0.6))
+
+ab_treatment <- data.frame(variant = "treatment",
+                         revenue = sim_lognormal_hurdle(n = 10000,
+                                                        lnorm_mean = 2.7,
+                                                        bernoulli_prob = 0.6))
+ab_observed_df <- rbind(ab_control, ab_treatment)
+
+# Estimate model and find posterior
+m2 <- brms::brm(revenue ~ variant, data = ab_observed_df,
+          family = hurdle_lognormal(), cores = 4)
+m2_posterior <- posterior_samples(m2)
+
+# Set number of observations (i.e. experiment's current sample size)
+n = 10000
+m2_posterior <- cbind(n_sims = n, m2_posterior)
+
+# Control
+post_control_list_ab <- with(m2_posterior, list(n = n_sims, bernoulli_prob = hu,
+                lnorm_mean = b_Intercept, lnorm_sd = sigma))
+
+pc_sims_ab <- pmap(post_control_list_ab, sim_lognormal_hurdle)
+pc_sims_sums_ab <- pmap(pc_sims_ab, sum) %>% unlist
+
+# Treatment
+post_treatment_list_ab <- with(m2_posterior, list(n = n_sims, bernoulli_prob = hu,
+                lnorm_mean = b_Intercept + b_varianttreatment, lnorm_sd = sigma))
+
+pt_sims_ab <- pmap(post_treatment_list_ab, sim_lognormal_hurdle)
+pt_sims_sums_ab <- pmap(pt_sims_ab, sum) %>% unlist
+
+# Find highest posterior density interval of the predicted experiment costs
+predicted_costs_ab <- pc_sims_sums_ab - pt_sims_sums_ab
+hdi_costs_ab <- hdi(predicted_costs_ab)
+
+# Keep sims in HDI
+costs_hdi_ab <- predicted_costs_ab[predicted_costs_ab >= hdi_costs_ab[1]]
+costs_hdi_ab <- costs_hdi_ab[costs_hdi_ab <= hdi_costs_ab[2]]
+costs_hdi_ab <- data.frame(costs = costs_hdi_ab)
+
+ggplot(costs_hdi_ab, aes(costs)) +
+    geom_histogram() +
+    geom_vline(xintercept = 5000, colour = "red") +
+    xlab("\nControl - Treatment") + ylab("Number of simulations\n")
+```
+
+
+
+
 
 
 
@@ -186,3 +260,7 @@ $y \sim \begin{cases} 0 & \mathrm{with\: probability}\: 0.4 \\ \ln(\mathcal{N}(2
 [^mcmc]: I am using Markov Chain Monte Carlo (MCMC) via the Stan probablistic programming language (<http://mc-stan.org/>).
 
 [^aa_parameters]: `b_intercept` is the log-normal mean for the control group which we had set at 3, i.e. $\exp(3) \approx 20$. `varianttreatment` is how much the treatment group's mean is different from the control group in this case they are the same, so the true value is 0. `sigma` is the standard deviation of the log-normal part, which we set to 1. `hu` is the probability of not clearing the hurdle, which we had set at 0.4.
+
+[^hdi_define]: <http://doingbayesiandataanalysis.blogspot.de/2012/04/why-to-use-highest-density-intervals.html>
+
+[^source]: <https://github.com/christophergandrud/bayes_hurdle_decision>
